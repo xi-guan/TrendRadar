@@ -5,7 +5,9 @@ TrendRadar Tools 包装器
 使得 LangChain Agent 可以调用这些工具。
 """
 
+import asyncio
 import json
+import logging
 from typing import List, Optional, Dict, Any, Type
 from pydantic import BaseModel, Field
 from langchain_core.tools import BaseTool
@@ -13,6 +15,10 @@ from langchain_core.tools import BaseTool
 from mcp_server.tools.data_query import DataQueryTools
 from mcp_server.tools.analytics import AnalyticsTools
 from mcp_server.tools.search_tools import SearchTools
+
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 
 # ==================== Pydantic Models for Tool Inputs ====================
@@ -73,7 +79,7 @@ class GetLatestNewsTool(BaseTool):
     - include_url: 是否包含链接，默认False
     """
     args_schema: Type[BaseModel] = GetLatestNewsInput
-    data_tools: Any = None  # 声明字段
+    data_tools: Optional[DataQueryTools] = None
 
     def __init__(self, project_root: Optional[str] = None):
         super().__init__()
@@ -86,10 +92,31 @@ class GetLatestNewsTool(BaseTool):
         include_url: bool = False,
     ) -> str:
         """同步执行"""
-        result = self.data_tools.get_latest_news(
-            platforms=platforms, limit=limit, include_url=include_url
-        )
-        return json.dumps(result, ensure_ascii=False, indent=2)
+        try:
+            logger.info(
+                f"Fetching latest news: platforms={platforms}, limit={limit}, include_url={include_url}"
+            )
+            result = self.data_tools.get_latest_news(
+                platforms=platforms, limit=limit, include_url=include_url
+            )
+
+            # 记录成功结果
+            news_count = len(result.get("news", [])) if isinstance(result, dict) else 0
+            logger.info(f"Successfully fetched {news_count} news items")
+
+            return json.dumps(result, ensure_ascii=False, indent=2)
+
+        except Exception as e:
+            error_msg = f"Failed to fetch latest news: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return json.dumps(
+                {
+                    "error": error_msg,
+                    "error_type": type(e).__name__,
+                    "success": False,
+                },
+                ensure_ascii=False,
+            )
 
     async def _arun(
         self,
@@ -97,8 +124,19 @@ class GetLatestNewsTool(BaseTool):
         limit: int = 50,
         include_url: bool = False,
     ) -> str:
-        """异步执行（暂时调用同步版本）"""
-        return self._run(platforms, limit, include_url)
+        """真正的异步执行"""
+        try:
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None, self._run, platforms, limit, include_url
+            )
+            return result
+        except Exception as e:
+            error_msg = f"Async execution failed: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return json.dumps(
+                {"error": error_msg, "success": False}, ensure_ascii=False
+            )
 
 
 class AnalyzeTrendTool(BaseTool):
@@ -124,7 +162,7 @@ class AnalyzeTrendTool(BaseTool):
     - date_range: 日期范围（可选）
     """
     args_schema: Type[BaseModel] = AnalyzeTrendInput
-    analytics_tools: Any = None  # 声明字段
+    analytics_tools: Optional[AnalyticsTools] = None
 
     def __init__(self, project_root: Optional[str] = None):
         super().__init__()
@@ -137,10 +175,29 @@ class AnalyzeTrendTool(BaseTool):
         date_range: Optional[Dict[str, str]] = None,
     ) -> str:
         """同步执行"""
-        result = self.analytics_tools.analyze_topic_trend_unified(
-            topic=topic, analysis_type=analysis_type, date_range=date_range
-        )
-        return json.dumps(result, ensure_ascii=False, indent=2)
+        try:
+            logger.info(
+                f"Analyzing trend: topic='{topic}', type={analysis_type}, date_range={date_range}"
+            )
+            result = self.analytics_tools.analyze_topic_trend_unified(
+                topic=topic, analysis_type=analysis_type, date_range=date_range
+            )
+
+            logger.info(f"Successfully analyzed trend for topic '{topic}'")
+            return json.dumps(result, ensure_ascii=False, indent=2)
+
+        except Exception as e:
+            error_msg = f"Failed to analyze trend for '{topic}': {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return json.dumps(
+                {
+                    "error": error_msg,
+                    "error_type": type(e).__name__,
+                    "success": False,
+                    "topic": topic,
+                },
+                ensure_ascii=False,
+            )
 
     async def _arun(
         self,
@@ -148,8 +205,19 @@ class AnalyzeTrendTool(BaseTool):
         analysis_type: str = "trend",
         date_range: Optional[Dict[str, str]] = None,
     ) -> str:
-        """异步执行"""
-        return self._run(topic, analysis_type, date_range)
+        """真正的异步执行"""
+        try:
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None, self._run, topic, analysis_type, date_range
+            )
+            return result
+        except Exception as e:
+            error_msg = f"Async execution failed: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return json.dumps(
+                {"error": error_msg, "success": False}, ensure_ascii=False
+            )
 
 
 class SearchNewsTool(BaseTool):
@@ -170,7 +238,7 @@ class SearchNewsTool(BaseTool):
     - limit: 返回数量，默认50
     """
     args_schema: Type[BaseModel] = SearchNewsInput
-    search_tools: Any = None  # 声明字段
+    search_tools: Optional[SearchTools] = None
 
     def __init__(self, project_root: Optional[str] = None):
         super().__init__()
@@ -183,10 +251,32 @@ class SearchNewsTool(BaseTool):
         limit: int = 50,
     ) -> str:
         """同步执行"""
-        result = self.search_tools.search_news_by_keyword(
-            keyword=keyword, platforms=platforms, limit=limit
-        )
-        return json.dumps(result, ensure_ascii=False, indent=2)
+        try:
+            logger.info(
+                f"Searching news: keyword='{keyword}', platforms={platforms}, limit={limit}"
+            )
+            result = self.search_tools.search_news_by_keyword(
+                keyword=keyword, platforms=platforms, limit=limit
+            )
+
+            # 记录成功结果
+            news_count = len(result.get("news", [])) if isinstance(result, dict) else 0
+            logger.info(f"Found {news_count} news items for keyword '{keyword}'")
+
+            return json.dumps(result, ensure_ascii=False, indent=2)
+
+        except Exception as e:
+            error_msg = f"Failed to search news for '{keyword}': {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return json.dumps(
+                {
+                    "error": error_msg,
+                    "error_type": type(e).__name__,
+                    "success": False,
+                    "keyword": keyword,
+                },
+                ensure_ascii=False,
+            )
 
     async def _arun(
         self,
@@ -194,17 +284,46 @@ class SearchNewsTool(BaseTool):
         platforms: Optional[List[str]] = None,
         limit: int = 50,
     ) -> str:
-        """异步执行"""
-        return self._run(keyword, platforms, limit)
+        """真正的异步执行"""
+        try:
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None, self._run, keyword, platforms, limit
+            )
+            return result
+        except Exception as e:
+            error_msg = f"Async execution failed: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return json.dumps(
+                {"error": error_msg, "success": False}, ensure_ascii=False
+            )
 
 
-# ==================== 工具集合 ====================
+# ==================== 工具集合（带缓存） ====================
+
+_tools_cache: Dict[Optional[str], List[BaseTool]] = {}
 
 
 def get_all_trendradar_tools(project_root: Optional[str] = None) -> List[BaseTool]:
-    """获取所有 TrendRadar 工具"""
-    return [
-        GetLatestNewsTool(project_root),
-        AnalyzeTrendTool(project_root),
-        SearchNewsTool(project_root),
-    ]
+    """
+    获取所有 TrendRadar 工具（带缓存优化）
+
+    Args:
+        project_root: 项目根目录
+
+    Returns:
+        工具列表
+    """
+    cache_key = project_root or "default"
+
+    if cache_key not in _tools_cache:
+        logger.info(f"Creating new tool instances for project_root={project_root}")
+        _tools_cache[cache_key] = [
+            GetLatestNewsTool(project_root),
+            AnalyzeTrendTool(project_root),
+            SearchNewsTool(project_root),
+        ]
+    else:
+        logger.debug(f"Using cached tools for project_root={project_root}")
+
+    return _tools_cache[cache_key]

@@ -69,9 +69,8 @@ def test_config():
         print(f"   - Model: {config.llm.model}")
         print(f"   - Temperature: {config.llm.temperature}")
         print(f"   - Max Tokens: {config.llm.max_tokens}")
-        print(f"   - Cache Enabled: {config.cache.enabled}")
-        print(f"   - Rate Limit: {config.rate_limit.max_requests_per_minute} req/min")
-        print(f"   - Max Cost/Day: ${config.cost.max_cost_per_day}")
+        print(f"   - Timeout: {config.llm.timeout}s")
+        print(f"   - Vector Store: {config.vector_store.provider}")
 
         return True
 
