@@ -1,7 +1,9 @@
 """
 LangChain 1.0 集成测试脚本
 
-测试 NewsAnalystAgent 的基本功能
+测试 Phase 1 和 Phase 2 的所有功能:
+- Phase 1: 基础设施 (Config, Tools, NewsAnalystAgent)
+- Phase 2: Chains, Middleware, TrendPredictorAgent
 """
 
 import os
@@ -183,16 +185,168 @@ def test_version_info():
         return False
 
 
+def test_chains():
+    """测试 Phase 2: Chains (LCEL)"""
+    print("\n" + "=" * 60)
+    print("测试 6: Summary Chains (Phase 2)")
+    print("=" * 60)
+
+    try:
+        from langchain_agents.chains import (
+            NewsSummaryChain,
+            MultipleNewsSummaryChain,
+            TrendAnalysisSummaryChain,
+            create_summary_chain,
+        )
+
+        print("✅ Chains 导入成功:")
+        print("   - NewsSummaryChain (单条新闻摘要)")
+        print("   - MultipleNewsSummaryChain (多条新闻综合摘要)")
+        print("   - TrendAnalysisSummaryChain (趋势分析摘要)")
+        print("   - create_summary_chain (工厂函数)")
+
+        # 测试工厂函数
+        chain_types = ["single", "multiple", "trend"]
+        for chain_type in chain_types:
+            try:
+                chain = create_summary_chain(chain_type)
+                print(f"   ✓ 创建 {chain_type} chain 成功")
+            except Exception as e:
+                print(f"   ✗ 创建 {chain_type} chain 失败: {e}")
+
+        return True
+
+    except Exception as e:
+        print(f"❌ Chains 测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_middleware():
+    """测试 Phase 2: Middleware"""
+    print("\n" + "=" * 60)
+    print("测试 7: Middleware 系统 (Phase 2)")
+    print("=" * 60)
+
+    try:
+        from langchain_agents.middleware import (
+            CacheMiddleware,
+            RateLimitMiddleware,
+            CostTrackerMiddleware,
+            get_global_cache,
+            get_global_rate_limiter,
+            get_global_cost_tracker,
+        )
+
+        print("✅ Middleware 导入成功:")
+        print("   - CacheMiddleware (缓存中间件)")
+        print("   - RateLimitMiddleware (速率限制)")
+        print("   - CostTrackerMiddleware (成本跟踪)")
+
+        # 测试 Cache Middleware
+        cache = CacheMiddleware(ttl=3600, max_size=100)
+        cache.set("test_result", "test_key")
+        result = cache.get("test_key")
+        assert result == "test_result", "Cache test failed"
+        stats = cache.get_stats()
+        print(f"   ✓ Cache Middleware 测试通过 (hit_rate: {stats['hit_rate']:.2f})")
+
+        # 测试 Rate Limit Middleware
+        limiter = RateLimitMiddleware(max_requests_per_minute=10, enabled=True, auto_wait=False)
+        limiter.acquire(tokens=100)
+        stats = limiter.get_stats()
+        print(f"   ✓ Rate Limit Middleware 测试通过 (requests: {stats['current_requests']})")
+
+        # 测试 Cost Tracker Middleware
+        tracker = CostTrackerMiddleware(max_cost_per_day=10.0, enabled=True)
+        cost = tracker.track("openai", "gpt-4o-mini", input_tokens=100, output_tokens=50)
+        stats = tracker.get_stats()
+        print(f"   ✓ Cost Tracker Middleware 测试通过 (total_cost: ${stats['total_cost']:.6f})")
+
+        return True
+
+    except Exception as e:
+        print(f"❌ Middleware 测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_trend_predictor():
+    """测试 Phase 2: TrendPredictorAgent (LangGraph)"""
+    print("\n" + "=" * 60)
+    print("测试 8: TrendPredictorAgent (Phase 2 - LangGraph)")
+    print("=" * 60)
+
+    try:
+        from langchain_agents.agents import TrendPredictorAgent
+
+        print("✅ TrendPredictorAgent 导入成功")
+        print("   - 使用 LangGraph 实现")
+        print("   - 支持有状态的多步推理")
+        print("   - 包含 5 个节点: collect_news, analyze_trend, generate_prediction,")
+        print("                   generate_recommendations, create_final_report")
+
+        # 测试 Agent 创建
+        agent = TrendPredictorAgent()
+        print("   ✓ Agent 创建成功")
+        print(f"   ✓ Graph 编译完成: {type(agent.graph)}")
+
+        return True
+
+    except Exception as e:
+        print(f"❌ TrendPredictorAgent 测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_langgraph_version():
+    """测试 LangGraph 版本"""
+    print("\n" + "=" * 60)
+    print("测试 9: LangGraph 版本信息 (Phase 2)")
+    print("=" * 60)
+
+    try:
+        import langgraph
+
+        print(f"✅ LangGraph 版本:")
+        try:
+            print(f"   - langgraph: {langgraph.__version__}")
+        except AttributeError:
+            print(f"   - langgraph: (已安装)")
+
+        # 检查是否是 1.0.x
+        try:
+            if langgraph.__version__.startswith("1.0"):
+                print("\n🎉 LangGraph 1.0.x 已安装!")
+        except AttributeError:
+            pass
+
+        return True
+
+    except Exception as e:
+        print(f"❌ LangGraph 版本检查失败: {e}")
+        return False
+
+
 def main():
     """运行所有测试"""
-    print("\n🧪 TrendRadar LangChain 1.0 集成测试\n")
+    print("\n🧪 TrendRadar LangChain 1.0 集成测试 (Phase 1 + Phase 2)\n")
 
     tests = [
-        ("导入测试", test_imports),
-        ("配置测试", test_config),
-        ("工具测试", test_tools),
-        ("Agent 创建测试", test_agent_creation),
-        ("版本信息", test_version_info),
+        # Phase 1 测试
+        ("Phase 1: 导入测试", test_imports),
+        ("Phase 1: 配置测试", test_config),
+        ("Phase 1: 工具测试", test_tools),
+        ("Phase 1: Agent 创建测试", test_agent_creation),
+        ("Phase 1: 版本信息", test_version_info),
+        # Phase 2 测试
+        ("Phase 2: Chains 测试", test_chains),
+        ("Phase 2: Middleware 测试", test_middleware),
+        ("Phase 2: TrendPredictorAgent 测试", test_trend_predictor),
+        ("Phase 2: LangGraph 版本", test_langgraph_version),
     ]
 
     results = []

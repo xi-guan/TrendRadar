@@ -7,4 +7,16 @@ LangChain Chains
 - 对比分析链
 """
 
-__all__ = []
+from langchain_agents.chains.summary_chain import (
+    NewsSummaryChain,
+    MultipleNewsSummaryChain,
+    TrendAnalysisSummaryChain,
+    create_summary_chain,
+)
+
+__all__ = [
+    "NewsSummaryChain",
+    "MultipleNewsSummaryChain",
+    "TrendAnalysisSummaryChain",
+    "create_summary_chain",
+]
