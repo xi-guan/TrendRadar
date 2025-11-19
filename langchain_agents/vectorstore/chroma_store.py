@@ -9,12 +9,11 @@ import threading
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
-from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from langchain_agents.config import get_config
+from langchain_agents.config import get_config, create_embeddings
 
 
 logger = logging.getLogger(__name__)
@@ -56,11 +55,7 @@ class NewsVectorStore:
 
         # 初始化 embeddings
         if embeddings is None:
-            config = get_config()
-            embeddings = OpenAIEmbeddings(
-                model="text-embedding-3-small",  # 最新的高性价比模型
-                # OpenAI API key 从环境变量自动读取
-            )
+            embeddings = create_embeddings()
 
         self.embeddings = embeddings
 

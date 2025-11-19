@@ -12,7 +12,7 @@ from langgraph.graph import StateGraph, END
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-from langchain_agents.config import get_config
+from langchain_agents.config import get_config, create_llm
 from langchain_agents.tools.trendradar_tools import get_all_trendradar_tools
 
 
@@ -178,13 +178,8 @@ def generate_prediction_node(state: TrendPredictorState) -> TrendPredictorState:
         logger.info(f"Generating prediction for topic: {topic}")
 
         # 获取 LLM
-        config = get_config()
-        from langchain_openai import ChatOpenAI
-        llm = ChatOpenAI(
-            model=config.llm.model,
-            temperature=config.llm.temperature + 0.2,  # 预测需要更高创造性
-            max_tokens=config.llm.max_tokens * 2,
-        )
+        llm = create_llm()
+        # 注意: 预测可能需要更高 temperature，可通过 LANGCHAIN_TEMPERATURE 调整
 
         # 构建 Prompt
         prompt = ChatPromptTemplate.from_messages([

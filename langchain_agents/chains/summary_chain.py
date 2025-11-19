@@ -10,7 +10,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 
-from langchain_agents.config import get_config
+from langchain_agents.config import get_config, create_llm
 
 
 logger = logging.getLogger(__name__)
@@ -86,14 +86,7 @@ class NewsSummaryChain:
             llm: LLM 实例，如果为 None 则使用默认配置
         """
         if llm is None:
-            config = get_config()
-            from langchain_openai import ChatOpenAI
-            llm = ChatOpenAI(
-                model=config.llm.model,
-                temperature=config.llm.temperature,
-                max_tokens=config.llm.max_tokens,
-                timeout=config.llm.timeout,
-            )
+            llm = create_llm()
 
         self.llm = llm
 
@@ -200,14 +193,8 @@ class MultipleNewsSummaryChain:
             llm: LLM 实例，如果为 None 则使用默认配置
         """
         if llm is None:
-            config = get_config()
-            from langchain_openai import ChatOpenAI
-            llm = ChatOpenAI(
-                model=config.llm.model,
-                temperature=config.llm.temperature,
-                max_tokens=config.llm.max_tokens * 2,  # 综合摘要需要更多 tokens
-                timeout=config.llm.timeout,
-            )
+            llm = create_llm()
+            # 注意: 综合摘要可能需要更多 tokens，可以通过环境变量 LANGCHAIN_MAX_TOKENS 调整
 
         self.llm = llm
 
@@ -294,14 +281,9 @@ class TrendAnalysisSummaryChain:
             llm: LLM 实例，如果为 None 则使用默认配置
         """
         if llm is None:
-            config = get_config()
-            from langchain_openai import ChatOpenAI
-            llm = ChatOpenAI(
-                model=config.llm.model,
-                temperature=config.llm.temperature + 0.1,  # 趋势分析需要稍高创造性
-                max_tokens=config.llm.max_tokens * 2,
-                timeout=config.llm.timeout,
-            )
+            llm = create_llm()
+            # 注意: 趋势分析需要更高 temperature 和更多 tokens
+            # 可通过 LANGCHAIN_TEMPERATURE 和 LANGCHAIN_MAX_TOKENS 环境变量调整
 
         self.llm = llm
 

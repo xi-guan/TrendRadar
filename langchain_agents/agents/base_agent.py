@@ -7,9 +7,8 @@
 from typing import List, Optional, Dict, Any
 from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool
-from langchain_openai import ChatOpenAI
 
-from ..config import get_config
+from ..config import get_config, create_llm
 
 
 class BaseAgent:
@@ -42,25 +41,7 @@ class BaseAgent:
 
     def _create_default_llm(self) -> BaseChatModel:
         """创建默认的 LLM"""
-        llm_config = self.config.llm
-
-        if llm_config.provider == "openai":
-            return ChatOpenAI(
-                model=llm_config.model,
-                api_key=llm_config.api_key,
-                base_url=llm_config.base_url,
-                temperature=llm_config.temperature,
-                max_tokens=llm_config.max_tokens,
-                timeout=llm_config.timeout,
-            )
-        elif llm_config.provider == "anthropic":
-            # 未来支持
-            raise NotImplementedError("Anthropic provider not yet implemented")
-        elif llm_config.provider == "ollama":
-            # 未来支持
-            raise NotImplementedError("Ollama provider not yet implemented")
-        else:
-            raise ValueError(f"Unknown LLM provider: {llm_config.provider}")
+        return create_llm(self.config)
 
     def _get_default_system_prompt(self) -> str:
         """获取默认的系统提示词"""

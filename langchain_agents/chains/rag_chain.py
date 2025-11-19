@@ -12,7 +12,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough, RunnableParallel
 from langchain_core.documents import Document
 
-from langchain_agents.config import get_config
+from langchain_agents.config import get_config, create_llm
 from langchain_agents.vectorstore.chroma_store import NewsVectorStore
 
 
@@ -114,14 +114,7 @@ class RAGChain:
 
         # 初始化 LLM
         if llm is None:
-            config = get_config()
-            from langchain_openai import ChatOpenAI
-            llm = ChatOpenAI(
-                model=config.llm.model,
-                temperature=config.llm.temperature,
-                max_tokens=config.llm.max_tokens,
-                timeout=config.llm.timeout,
-            )
+            llm = create_llm()
 
         self.llm = llm
 

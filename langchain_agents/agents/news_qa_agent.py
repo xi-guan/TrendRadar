@@ -14,7 +14,7 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 
-from langchain_agents.config import get_config
+from langchain_agents.config import get_config, create_llm
 from langchain_agents.memory.conversation_buffer import ConversationBufferMemory
 from langchain_agents.tools.trendradar_tools import get_all_trendradar_tools
 
@@ -178,16 +178,8 @@ def generate_answer_node(state: NewsQAState) -> NewsQAState:
     try:
         logger.info("Generating answer")
 
-        # 获取配置和 LLM
-        config = get_config()
-        from langchain_openai import ChatOpenAI
-
-        llm = ChatOpenAI(
-            model=config.llm.model,
-            temperature=config.llm.temperature,
-            max_tokens=config.llm.max_tokens,
-            timeout=config.llm.timeout,
-        )
+        # 获取 LLM
+        llm = create_llm()
 
         # 构建上下文
         query = state["query"]
@@ -282,14 +274,7 @@ class NewsQAAgent:
         """
         # 初始化 LLM
         if llm is None:
-            config = get_config()
-            from langchain_openai import ChatOpenAI
-            llm = ChatOpenAI(
-                model=config.llm.model,
-                temperature=config.llm.temperature,
-                max_tokens=config.llm.max_tokens,
-                timeout=config.llm.timeout,
-            )
+            llm = create_llm()
 
         self.llm = llm
 
