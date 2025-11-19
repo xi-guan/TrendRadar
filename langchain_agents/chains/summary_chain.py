@@ -116,7 +116,21 @@ class NewsSummaryChain:
 
         Returns:
             摘要文本
+
+        Raises:
+            ValueError: 如果输入无效
+
+        Note:
+            P0 修复: 添加输入验证避免浪费 API 成本
         """
+        # P0 修复: 输入验证
+        if not title or not title.strip():
+            raise ValueError("title cannot be empty")
+        if not content or not content.strip():
+            raise ValueError("content cannot be empty")
+        if len(content.strip()) < 10:
+            raise ValueError("content too short to summarize (minimum 10 characters)")
+
         try:
             logger.info(f"Summarizing news: {title[:50]}...")
 
@@ -134,7 +148,30 @@ class NewsSummaryChain:
             raise
 
     async def asummarize(self, title: str, content: str) -> str:
-        """异步生成摘要"""
+        """
+        异步生成摘要
+
+        Args:
+            title: 新闻标题
+            content: 新闻内容
+
+        Returns:
+            摘要文本
+
+        Raises:
+            ValueError: 如果输入无效
+
+        Note:
+            P0 修复: 添加输入验证避免浪费 API 成本
+        """
+        # P0 修复: 输入验证
+        if not title or not title.strip():
+            raise ValueError("title cannot be empty")
+        if not content or not content.strip():
+            raise ValueError("content cannot be empty")
+        if len(content.strip()) < 10:
+            raise ValueError("content too short to summarize (minimum 10 characters)")
+
         try:
             logger.info(f"Async summarizing news: {title[:50]}...")
 

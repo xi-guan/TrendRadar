@@ -70,9 +70,19 @@ def collect_news_node(state: TrendPredictorState) -> TrendPredictorState:
     try:
         logger.info(f"Collecting news for topic: {topic} (limit={limit})")
 
-        # 获取 TrendRadar 工具
+        # 获取 TrendRadar 工具 (P0 修复: 添加默认值避免 StopIteration)
         tools = get_all_trendradar_tools()
-        search_tool = next(t for t in tools if t.name == "search_news")
+        search_tool = next((t for t in tools if t.name == "search_news"), None)
+
+        if search_tool is None:
+            error_msg = "search_news tool not found in available tools"
+            logger.error(error_msg)
+            return {
+                **state,
+                "news_data": {"error": error_msg, "count": 0, "news": []},
+                "errors": [error_msg],
+                "steps_completed": ["collect_news"],
+            }
 
         # 搜索新闻
         result_json = search_tool._run(keyword=topic, platforms=None, limit=limit)
@@ -111,9 +121,19 @@ def analyze_trend_node(state: TrendPredictorState) -> TrendPredictorState:
     try:
         logger.info(f"Analyzing trend for topic: {topic}")
 
-        # 获取分析工具
+        # 获取分析工具 (P0 修复: 添加默认值避免 StopIteration)
         tools = get_all_trendradar_tools()
-        analyze_tool = next(t for t in tools if t.name == "analyze_topic_trend")
+        analyze_tool = next((t for t in tools if t.name == "analyze_topic_trend"), None)
+
+        if analyze_tool is None:
+            error_msg = "analyze_topic_trend tool not found in available tools"
+            logger.error(error_msg)
+            return {
+                **state,
+                "trend_analysis": {"error": error_msg},
+                "errors": [error_msg],
+                "steps_completed": ["analyze_trend"],
+            }
 
         # 分析趋势
         result_json = analyze_tool._run(

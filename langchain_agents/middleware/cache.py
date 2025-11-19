@@ -7,12 +7,16 @@ Cache Middleware
 import hashlib
 import json
 import logging
+import threading
 import time
 from typing import Any, Dict, Optional, Callable
 from functools import wraps
 
 
 logger = logging.getLogger(__name__)
+
+# Sentinel value for cache misses (to differentiate from cached None values)
+_CACHE_MISS = object()
 
 
 class CacheMiddleware:
@@ -46,6 +50,9 @@ class CacheMiddleware:
 
         # 缓存存储: {cache_key: (result, timestamp)}
         self._cache: Dict[str, tuple[Any, float]] = {}
+
+        # 线程锁 (P0 修复: 线程安全)
+        self._lock = threading.RLock()
 
         # 统计信息
         self._hits = 0
@@ -122,7 +129,7 @@ class CacheMiddleware:
 
             logger.debug(f"Evicted {evict_count} LRU cache entries")
 
-    def get(self, *args, **kwargs) -> Optional[Any]:
+    def get(self, *args, **kwargs) -> Any:
         """
         从缓存获取结果
 
@@ -131,32 +138,37 @@ class CacheMiddleware:
             **kwargs: 关键字参数
 
         Returns:
-            缓存的结果，如果未命中则返回 None
+            缓存的结果，如果未命中则返回 _CACHE_MISS sentinel
+
+        Note:
+            P0 修复: 使用 sentinel 模式支持缓存 None 值
+            P0 修复: 添加线程锁保证线程安全
         """
         if not self.enabled:
-            return None
+            return _CACHE_MISS
 
         cache_key = self._generate_cache_key(*args, **kwargs)
 
-        if cache_key in self._cache:
-            result, timestamp = self._cache[cache_key]
+        with self._lock:
+            if cache_key in self._cache:
+                result, timestamp = self._cache[cache_key]
 
-            if self._is_expired(timestamp):
-                # 过期，删除
-                del self._cache[cache_key]
-                self._misses += 1
-                logger.debug(f"Cache expired for key {cache_key[:16]}...")
-                return None
+                if self._is_expired(timestamp):
+                    # 过期，删除
+                    del self._cache[cache_key]
+                    self._misses += 1
+                    logger.debug(f"Cache expired for key {cache_key[:16]}...")
+                    return _CACHE_MISS
 
-            # 命中
-            self._hits += 1
-            logger.debug(f"Cache hit for key {cache_key[:16]}...")
-            return result
+                # 命中
+                self._hits += 1
+                logger.debug(f"Cache hit for key {cache_key[:16]}...")
+                return result
 
-        # 未命中
-        self._misses += 1
-        logger.debug(f"Cache miss for key {cache_key[:16]}...")
-        return None
+            # 未命中
+            self._misses += 1
+            logger.debug(f"Cache miss for key {cache_key[:16]}...")
+            return _CACHE_MISS
 
     def set(self, result: Any, *args, **kwargs):
         """
@@ -166,25 +178,35 @@ class CacheMiddleware:
             result: 要缓存的结果
             *args: 位置参数
             **kwargs: 关键字参数
+
+        Note:
+            P0 修复: 添加线程锁保证线程安全
         """
         if not self.enabled:
             return
 
-        # 清理过期缓存
-        self._evict_expired()
+        with self._lock:
+            # 清理过期缓存
+            self._evict_expired()
 
-        # 检查大小限制
-        self._evict_lru()
+            # 检查大小限制
+            self._evict_lru()
 
-        cache_key = self._generate_cache_key(*args, **kwargs)
-        self._cache[cache_key] = (result, time.time())
+            cache_key = self._generate_cache_key(*args, **kwargs)
+            self._cache[cache_key] = (result, time.time())
 
-        logger.debug(f"Cached result for key {cache_key[:16]}...")
+            logger.debug(f"Cached result for key {cache_key[:16]}...")
 
     def clear(self):
-        """清空所有缓存"""
-        self._cache.clear()
-        logger.info("Cache cleared")
+        """
+        清空所有缓存
+
+        Note:
+            P0 修复: 添加线程锁保证线程安全
+        """
+        with self._lock:
+            self._cache.clear()
+            logger.info("Cache cleared")
 
     def get_stats(self) -> Dict[str, Any]:
         """
@@ -192,20 +214,24 @@ class CacheMiddleware:
 
         Returns:
             统计信息字典
-        """
-        total_requests = self._hits + self._misses
-        hit_rate = self._hits / total_requests if total_requests > 0 else 0.0
 
-        return {
-            "enabled": self.enabled,
-            "hits": self._hits,
-            "misses": self._misses,
-            "total_requests": total_requests,
-            "hit_rate": hit_rate,
-            "cache_size": len(self._cache),
-            "max_size": self.max_size,
-            "ttl": self.ttl,
-        }
+        Note:
+            P0 修复: 添加线程锁保证线程安全
+        """
+        with self._lock:
+            total_requests = self._hits + self._misses
+            hit_rate = self._hits / total_requests if total_requests > 0 else 0.0
+
+            return {
+                "enabled": self.enabled,
+                "hits": self._hits,
+                "misses": self._misses,
+                "total_requests": total_requests,
+                "hit_rate": hit_rate,
+                "cache_size": len(self._cache),
+                "max_size": self.max_size,
+                "ttl": self.ttl,
+            }
 
 
 # ==================== 装饰器 ====================
@@ -237,10 +263,10 @@ def cached(
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
-            # 尝试从缓存获取
+            # 尝试从缓存获取 (P0 修复: 使用 sentinel 模式)
             result = cache.get(*args, **kwargs)
 
-            if result is not None:
+            if result is not _CACHE_MISS:
                 return result
 
             # 缓存未命中，执行函数

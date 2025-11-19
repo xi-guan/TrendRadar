@@ -5,6 +5,7 @@ Rate Limit Middleware
 """
 
 import logging
+import threading
 import time
 from collections import deque
 from typing import Any, Dict, Optional, Callable
@@ -55,6 +56,9 @@ class RateLimitMiddleware:
         # deque 用于高效的 append 和 popleft 操作
         self._request_times: deque[float] = deque()
         self._token_counts: deque[int] = deque()
+
+        # 线程锁 (P0 修复: 线程安全)
+        self._lock = threading.RLock()
 
         # 统计信息
         self._total_requests = 0
@@ -142,38 +146,47 @@ class RateLimitMiddleware:
 
         Raises:
             RateLimitExceeded: 如果速率限制超出且 auto_wait=False
+
+        Note:
+            P0 修复: 添加线程锁保证线程安全
         """
         if not self.enabled:
             return
 
-        current_time = time.time()
+        with self._lock:
+            current_time = time.time()
 
-        wait_time = self._calculate_wait_time(current_time, tokens)
+            wait_time = self._calculate_wait_time(current_time, tokens)
 
-        if wait_time > 0:
-            if self.auto_wait:
-                logger.warning(
-                    f"Rate limit approached, waiting {wait_time:.2f}s "
-                    f"(requests: {len(self._request_times)}/{self.max_requests_per_minute}, "
-                    f"tokens: {sum(self._token_counts)}/{self.max_tokens_per_minute})"
-                )
-                time.sleep(wait_time)
-                self._total_waits += 1
-                self._total_wait_time += wait_time
-                current_time = time.time()  # 更新时间
-            else:
-                usage = self._get_current_usage(current_time)
-                raise RateLimitExceeded(
-                    f"Rate limit exceeded: "
-                    f"requests={usage['requests']}/{self.max_requests_per_minute}, "
-                    f"tokens={usage['tokens']}/{self.max_tokens_per_minute}"
-                )
+            if wait_time > 0:
+                if self.auto_wait:
+                    logger.warning(
+                        f"Rate limit approached, waiting {wait_time:.2f}s "
+                        f"(requests: {len(self._request_times)}/{self.max_requests_per_minute}, "
+                        f"tokens: {sum(self._token_counts)}/{self.max_tokens_per_minute})"
+                    )
+                    # Release lock during sleep to allow other threads
+                    self._lock.release()
+                    try:
+                        time.sleep(wait_time)
+                    finally:
+                        self._lock.acquire()
+                    self._total_waits += 1
+                    self._total_wait_time += wait_time
+                    current_time = time.time()  # 更新时间
+                else:
+                    usage = self._get_current_usage(current_time)
+                    raise RateLimitExceeded(
+                        f"Rate limit exceeded: "
+                        f"requests={usage['requests']}/{self.max_requests_per_minute}, "
+                        f"tokens={usage['tokens']}/{self.max_tokens_per_minute}"
+                    )
 
-        # 记录本次请求
-        self._request_times.append(current_time)
-        self._token_counts.append(tokens)
-        self._total_requests += 1
-        self._total_tokens += tokens
+            # 记录本次请求
+            self._request_times.append(current_time)
+            self._token_counts.append(tokens)
+            self._total_requests += 1
+            self._total_tokens += tokens
 
     def release(self, actual_tokens: Optional[int] = None):
         """
@@ -181,17 +194,21 @@ class RateLimitMiddleware:
 
         Args:
             actual_tokens: 实际使用的 token 数（如果与预估不同）
+
+        Note:
+            P0 修复: 添加线程锁保证线程安全
         """
         if not self.enabled or actual_tokens is None:
             return
 
-        # 更新最后一次请求的 token 数
-        if self._token_counts:
-            estimated_tokens = self._token_counts[-1]
-            self._token_counts[-1] = actual_tokens
+        with self._lock:
+            # 更新最后一次请求的 token 数
+            if self._token_counts:
+                estimated_tokens = self._token_counts[-1]
+                self._token_counts[-1] = actual_tokens
 
-            # 更新总计
-            self._total_tokens = self._total_tokens - estimated_tokens + actual_tokens
+                # 更新总计
+                self._total_tokens = self._total_tokens - estimated_tokens + actual_tokens
 
     def get_stats(self) -> Dict[str, Any]:
         """
@@ -199,32 +216,42 @@ class RateLimitMiddleware:
 
         Returns:
             统计信息字典
-        """
-        current_time = time.time()
-        usage = self._get_current_usage(current_time)
 
-        return {
-            "enabled": self.enabled,
-            "max_requests_per_minute": self.max_requests_per_minute,
-            "max_tokens_per_minute": self.max_tokens_per_minute,
-            "current_requests": usage["requests"],
-            "current_tokens": usage["tokens"],
-            "total_requests": self._total_requests,
-            "total_tokens": self._total_tokens,
-            "total_waits": self._total_waits,
-            "total_wait_time": self._total_wait_time,
-            "auto_wait": self.auto_wait,
-        }
+        Note:
+            P0 修复: 添加线程锁保证线程安全
+        """
+        with self._lock:
+            current_time = time.time()
+            usage = self._get_current_usage(current_time)
+
+            return {
+                "enabled": self.enabled,
+                "max_requests_per_minute": self.max_requests_per_minute,
+                "max_tokens_per_minute": self.max_tokens_per_minute,
+                "current_requests": usage["requests"],
+                "current_tokens": usage["tokens"],
+                "total_requests": self._total_requests,
+                "total_tokens": self._total_tokens,
+                "total_waits": self._total_waits,
+                "total_wait_time": self._total_wait_time,
+                "auto_wait": self.auto_wait,
+            }
 
     def reset(self):
-        """重置所有统计和记录"""
-        self._request_times.clear()
-        self._token_counts.clear()
-        self._total_requests = 0
-        self._total_tokens = 0
-        self._total_waits = 0
-        self._total_wait_time = 0.0
-        logger.info("Rate limiter reset")
+        """
+        重置所有统计和记录
+
+        Note:
+            P0 修复: 添加线程锁保证线程安全
+        """
+        with self._lock:
+            self._request_times.clear()
+            self._token_counts.clear()
+            self._total_requests = 0
+            self._total_tokens = 0
+            self._total_waits = 0
+            self._total_wait_time = 0.0
+            logger.info("Rate limiter reset")
 
 
 # ==================== 装饰器 ====================

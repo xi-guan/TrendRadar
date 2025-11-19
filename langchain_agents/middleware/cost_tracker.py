@@ -5,7 +5,9 @@ Cost Tracker Middleware
 """
 
 import logging
+import threading
 import time
+from collections import deque
 from typing import Any, Dict, Optional, Callable
 from functools import wraps
 from datetime import datetime, timedelta
@@ -94,7 +96,11 @@ class CostTrackerMiddleware:
         self.pricing_table = pricing_table or PRICING_TABLE
 
         # 成本记录: [(timestamp, cost, model, input_tokens, output_tokens), ...]
-        self._cost_records = []
+        # P1 修复: 使用 deque 限制大小防止内存泄漏
+        self._cost_records = deque(maxlen=10000)
+
+        # 线程锁 (P0 修复: 线程安全)
+        self._lock = threading.RLock()
 
         # 统计信息
         self._total_cost = 0.0
@@ -106,7 +112,7 @@ class CostTrackerMiddleware:
             f"CostTrackerMiddleware initialized: "
             f"max_cost_per_day=${max_cost_per_day}, "
             f"max_cost_per_month=${max_cost_per_month}, "
-            f"enabled={enabled}"
+            f"enabled={enabled} (max_records=10000)"
         )
 
     def _calculate_cost(
@@ -194,6 +200,9 @@ class CostTrackerMiddleware:
 
         Raises:
             CostLimitExceeded: 如果超出成本限制
+
+        Note:
+            P0 修复: 添加线程锁保证线程安全
         """
         if not self.enabled:
             return 0.0
@@ -201,50 +210,51 @@ class CostTrackerMiddleware:
         # 计算成本
         cost = self._calculate_cost(provider, model, input_tokens, output_tokens)
 
-        # 检查每日限制
-        daily_cost = self._get_period_cost(24) + cost
-        if daily_cost > self.max_cost_per_day:
-            raise CostLimitExceeded(
-                f"Daily cost limit exceeded: ${daily_cost:.4f} > ${self.max_cost_per_day}"
-            )
-
-        # 检查每月限制
-        monthly_cost = self._get_period_cost(24 * 30) + cost
-        if monthly_cost > self.max_cost_per_month:
-            raise CostLimitExceeded(
-                f"Monthly cost limit exceeded: ${monthly_cost:.4f} > ${self.max_cost_per_month}"
-            )
-
-        # 检查预警阈值
-        if not self._alert_sent:
-            if daily_cost >= self.max_cost_per_day * self.alert_threshold:
-                logger.warning(
-                    f"⚠️  Daily cost approaching limit: "
-                    f"${daily_cost:.4f} / ${self.max_cost_per_day} "
-                    f"({daily_cost / self.max_cost_per_day * 100:.1f}%)"
+        with self._lock:
+            # 检查每日限制
+            daily_cost = self._get_period_cost(24) + cost
+            if daily_cost > self.max_cost_per_day:
+                raise CostLimitExceeded(
+                    f"Daily cost limit exceeded: ${daily_cost:.4f} > ${self.max_cost_per_day}"
                 )
-                self._alert_sent = True
 
-        # 记录成本
-        self._cost_records.append((
-            time.time(),
-            cost,
-            model,
-            input_tokens,
-            output_tokens,
-        ))
+            # 检查每月限制
+            monthly_cost = self._get_period_cost(24 * 30) + cost
+            if monthly_cost > self.max_cost_per_month:
+                raise CostLimitExceeded(
+                    f"Monthly cost limit exceeded: ${monthly_cost:.4f} > ${self.max_cost_per_month}"
+                )
 
-        # 更新总计
-        self._total_cost += cost
-        self._total_input_tokens += input_tokens
-        self._total_output_tokens += output_tokens
+            # 检查预警阈值
+            if not self._alert_sent:
+                if daily_cost >= self.max_cost_per_day * self.alert_threshold:
+                    logger.warning(
+                        f"⚠️  Daily cost approaching limit: "
+                        f"${daily_cost:.4f} / ${self.max_cost_per_day} "
+                        f"({daily_cost / self.max_cost_per_day * 100:.1f}%)"
+                    )
+                    self._alert_sent = True
 
-        logger.info(
-            f"Cost tracked: ${cost:.6f} ({model}, "
-            f"{input_tokens} input + {output_tokens} output tokens)"
-        )
+            # 记录成本
+            self._cost_records.append((
+                time.time(),
+                cost,
+                model,
+                input_tokens,
+                output_tokens,
+            ))
 
-        return cost
+            # 更新总计
+            self._total_cost += cost
+            self._total_input_tokens += input_tokens
+            self._total_output_tokens += output_tokens
+
+            logger.info(
+                f"Cost tracked: ${cost:.6f} ({model}, "
+                f"{input_tokens} input + {output_tokens} output tokens)"
+            )
+
+            return cost
 
     def get_stats(self, period: str = "all") -> Dict[str, Any]:
         """
@@ -255,71 +265,87 @@ class CostTrackerMiddleware:
 
         Returns:
             统计信息字典
+
+        Note:
+            P0 修复: 添加线程锁保证线程安全
         """
-        # 确定时间范围
-        if period == "day":
-            period_hours = 24
-        elif period == "week":
-            period_hours = 24 * 7
-        elif period == "month":
-            period_hours = 24 * 30
-        else:  # "all"
-            period_hours = None
+        with self._lock:
+            # 确定时间范围
+            if period == "day":
+                period_hours = 24
+            elif period == "week":
+                period_hours = 24 * 7
+            elif period == "month":
+                period_hours = 24 * 30
+            else:  # "all"
+                period_hours = None
 
-        # 过滤记录
-        if period_hours:
-            cutoff_time = time.time() - (period_hours * 3600)
-            records = [
-                (timestamp, cost, model, input_tokens, output_tokens)
-                for timestamp, cost, model, input_tokens, output_tokens in self._cost_records
-                if timestamp >= cutoff_time
-            ]
-        else:
-            records = self._cost_records
+            # 过滤记录
+            if period_hours:
+                cutoff_time = time.time() - (period_hours * 3600)
+                records = [
+                    (timestamp, cost, model, input_tokens, output_tokens)
+                    for timestamp, cost, model, input_tokens, output_tokens in self._cost_records
+                    if timestamp >= cutoff_time
+                ]
+            else:
+                records = list(self._cost_records)  # Create a copy for thread safety
 
-        # 计算统计信息
-        total_cost = sum(cost for _, cost, _, _, _ in records)
-        total_input_tokens = sum(input_tokens for _, _, _, input_tokens, _ in records)
-        total_output_tokens = sum(output_tokens for _, _, _, _, output_tokens in records)
-        total_requests = len(records)
+            # 计算统计信息
+            total_cost = sum(cost for _, cost, _, _, _ in records)
+            total_input_tokens = sum(input_tokens for _, _, _, input_tokens, _ in records)
+            total_output_tokens = sum(output_tokens for _, _, _, _, output_tokens in records)
+            total_requests = len(records)
 
-        # 按模型分组
-        model_costs = {}
-        for _, cost, model, _, _ in records:
-            if model not in model_costs:
-                model_costs[model] = 0.0
-            model_costs[model] += cost
+            # 按模型分组
+            model_costs = {}
+            for _, cost, model, _, _ in records:
+                if model not in model_costs:
+                    model_costs[model] = 0.0
+                model_costs[model] += cost
 
-        return {
-            "enabled": self.enabled,
-            "period": period,
-            "total_cost": total_cost,
-            "total_input_tokens": total_input_tokens,
-            "total_output_tokens": total_output_tokens,
-            "total_requests": total_requests,
-            "average_cost_per_request": total_cost / total_requests if total_requests > 0 else 0.0,
-            "model_costs": model_costs,
-            "limits": {
-                "max_cost_per_day": self.max_cost_per_day,
-                "max_cost_per_month": self.max_cost_per_month,
-                "daily_usage": self._get_period_cost(24),
-                "monthly_usage": self._get_period_cost(24 * 30),
-            },
-        }
+            return {
+                "enabled": self.enabled,
+                "period": period,
+                "total_cost": total_cost,
+                "total_input_tokens": total_input_tokens,
+                "total_output_tokens": total_output_tokens,
+                "total_requests": total_requests,
+                "average_cost_per_request": total_cost / total_requests if total_requests > 0 else 0.0,
+                "model_costs": model_costs,
+                "limits": {
+                    "max_cost_per_day": self.max_cost_per_day,
+                    "max_cost_per_month": self.max_cost_per_month,
+                    "daily_usage": self._get_period_cost(24),
+                    "monthly_usage": self._get_period_cost(24 * 30),
+                },
+            }
 
     def reset_alert(self):
-        """重置预警状态"""
-        self._alert_sent = False
-        logger.info("Cost alert reset")
+        """
+        重置预警状态
+
+        Note:
+            P0 修复: 添加线程锁保证线程安全
+        """
+        with self._lock:
+            self._alert_sent = False
+            logger.info("Cost alert reset")
 
     def clear(self):
-        """清空所有记录"""
-        self._cost_records.clear()
-        self._total_cost = 0.0
-        self._total_input_tokens = 0
-        self._total_output_tokens = 0
-        self._alert_sent = False
-        logger.info("Cost tracker cleared")
+        """
+        清空所有记录
+
+        Note:
+            P0 修复: 添加线程锁保证线程安全
+        """
+        with self._lock:
+            self._cost_records.clear()
+            self._total_cost = 0.0
+            self._total_input_tokens = 0
+            self._total_output_tokens = 0
+            self._alert_sent = False
+            logger.info("Cost tracker cleared")
 
 
 # ==================== 装饰器 ====================
