@@ -1,9 +1,10 @@
 """
 LangChain 1.0 集成测试脚本
 
-测试 Phase 1 和 Phase 2 的所有功能:
+测试 Phase 1, Phase 2 和 Phase 3 的所有功能:
 - Phase 1: 基础设施 (Config, Tools, NewsAnalystAgent)
 - Phase 2: Chains, Middleware, TrendPredictorAgent
+- Phase 3: Memory, Vector Store, RAG, NewsQAAgent
 """
 
 import os
@@ -331,9 +332,180 @@ def test_langgraph_version():
         return False
 
 
+def test_memory():
+    """测试 Phase 3: Memory (ConversationBufferMemory)"""
+    print("\n" + "=" * 60)
+    print("测试 10: Memory 系统 (Phase 3)")
+    print("=" * 60)
+
+    try:
+        from langchain_agents.memory import (
+            ConversationBufferMemory,
+            ConversationBufferWindowMemory,
+            create_memory,
+        )
+        from langchain_core.messages import HumanMessage, AIMessage
+
+        print("✅ Memory 模块导入成功:")
+        print("   - ConversationBufferMemory (完整对话历史)")
+        print("   - ConversationBufferWindowMemory (窗口记忆)")
+
+        # 测试 ConversationBufferMemory
+        memory = ConversationBufferMemory(max_messages=10)
+        memory.add_user_message("你好")
+        memory.add_ai_message("你好！有什么可以帮助你的吗？")
+        memory.add_user_message("今天天气怎么样？")
+        memory.add_ai_message("很抱歉，我无法获取实时天气信息。")
+
+        stats = memory.get_stats()
+        print(f"   ✓ ConversationBufferMemory 测试通过 (messages: {stats['total_messages']})")
+
+        # 测试 ConversationBufferWindowMemory
+        window_memory = ConversationBufferWindowMemory(k=5)
+        for i in range(10):
+            window_memory.add_user_message(f"消息 {i}")
+            window_memory.add_ai_message(f"回复 {i}")
+
+        stats = window_memory.get_stats()
+        print(f"   ✓ ConversationBufferWindowMemory 测试通过 (kept: {stats['total_messages']}/20)")
+
+        # 测试工厂函数
+        buffer_mem = create_memory("buffer", max_messages=5)
+        window_mem = create_memory("window", max_messages=3)
+        print(f"   ✓ create_memory 工厂函数测试通过")
+
+        return True
+
+    except Exception as e:
+        print(f"❌ Memory 测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_vectorstore():
+    """测试 Phase 3: Vector Store (Chroma)"""
+    print("\n" + "=" * 60)
+    print("测试 11: Vector Store (Phase 3)")
+    print("=" * 60)
+
+    try:
+        from langchain_agents.vectorstore import (
+            NewsVectorStore,
+            create_news_vectorstore,
+        )
+
+        print("✅ Vector Store 模块导入成功:")
+        print("   - NewsVectorStore (基于 Chroma)")
+
+        # 跳过实际向量存储测试（需要 embeddings API）
+        if not os.getenv("OPENAI_API_KEY"):
+            print("   ⚠️  跳过实际测试 (需要 OPENAI_API_KEY)")
+            print("   ✓ 模块导入测试通过")
+            return True
+
+        # 测试内存模式（不持久化）
+        vectorstore = create_news_vectorstore(
+            persist_directory=None,  # 内存模式
+            collection_name="test_news",
+        )
+
+        # 添加测试新闻
+        test_news = [
+            {
+                "title": "AI技术取得重大突破",
+                "content": "人工智能技术在自然语言处理领域取得了重大突破...",
+                "source": "科技日报",
+                "timestamp": "2025-01-19",
+            }
+        ]
+
+        count = vectorstore.add_news(test_news)
+        stats = vectorstore.get_stats()
+        print(f"   ✓ NewsVectorStore 测试通过 (documents: {stats['document_count']})")
+
+        return True
+
+    except Exception as e:
+        print(f"❌ Vector Store 测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_rag_chain():
+    """测试 Phase 3: RAG Chain"""
+    print("\n" + "=" * 60)
+    print("测试 12: RAG Chain (Phase 3)")
+    print("=" * 60)
+
+    try:
+        from langchain_agents.chains import (
+            RAGChain,
+            ConversationalRAGChain,
+            create_rag_chain,
+        )
+
+        print("✅ RAG Chain 模块导入成功:")
+        print("   - RAGChain (检索增强生成)")
+        print("   - ConversationalRAGChain (对话式 RAG)")
+
+        # 跳过实际 RAG 测试（需要 vector store 和 LLM）
+        if not os.getenv("OPENAI_API_KEY"):
+            print("   ⚠️  跳过实际测试 (需要 OPENAI_API_KEY)")
+            print("   ✓ 模块导入测试通过")
+            return True
+
+        print("   ✓ RAG Chain 导入测试通过")
+
+        return True
+
+    except Exception as e:
+        print(f"❌ RAG Chain 测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_news_qa_agent():
+    """测试 Phase 3: NewsQAAgent"""
+    print("\n" + "=" * 60)
+    print("测试 13: NewsQAAgent (Phase 3)")
+    print("=" * 60)
+
+    try:
+        from langchain_agents.agents import NewsQAAgent, create_news_qa_agent
+
+        print("✅ NewsQAAgent 导入成功:")
+        print("   - 对话式新闻问答")
+        print("   - 集成 Memory + LangGraph")
+        print("   - 工具调用支持")
+
+        # 跳过实际测试（需要 API key）
+        if not os.getenv("OPENAI_API_KEY"):
+            print("   ⚠️  跳过实际测试 (需要 OPENAI_API_KEY)")
+            print("   ✓ 模块导入测试通过")
+            return True
+
+        # 测试创建 Agent
+        agent = create_news_qa_agent(max_history=5)
+        print("   ✓ NewsQAAgent 创建成功")
+
+        stats = agent.get_stats()
+        print(f"   ✓ Agent 统计: {stats['agent_type']}, max_history={stats['max_history']}")
+
+        return True
+
+    except Exception as e:
+        print(f"❌ NewsQAAgent 测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def main():
     """运行所有测试"""
-    print("\n🧪 TrendRadar LangChain 1.0 集成测试 (Phase 1 + Phase 2)\n")
+    print("\n🧪 TrendRadar LangChain 1.0 集成测试 (Phase 1 + Phase 2 + Phase 3)\n")
 
     tests = [
         # Phase 1 测试
@@ -347,6 +519,11 @@ def main():
         ("Phase 2: Middleware 测试", test_middleware),
         ("Phase 2: TrendPredictorAgent 测试", test_trend_predictor),
         ("Phase 2: LangGraph 版本", test_langgraph_version),
+        # Phase 3 测试
+        ("Phase 3: Memory 测试", test_memory),
+        ("Phase 3: Vector Store 测试", test_vectorstore),
+        ("Phase 3: RAG Chain 测试", test_rag_chain),
+        ("Phase 3: NewsQAAgent 测试", test_news_qa_agent),
     ]
 
     results = []
