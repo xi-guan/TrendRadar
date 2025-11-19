@@ -6,7 +6,7 @@ TrendRadar Tools 包装器
 """
 
 import json
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Type
 from pydantic import BaseModel, Field
 from langchain_core.tools import BaseTool
 
@@ -72,7 +72,8 @@ class GetLatestNewsTool(BaseTool):
     - limit: 返回数量，默认50
     - include_url: 是否包含链接，默认False
     """
-    args_schema = GetLatestNewsInput
+    args_schema: Type[BaseModel] = GetLatestNewsInput
+    data_tools: Any = None  # 声明字段
 
     def __init__(self, project_root: Optional[str] = None):
         super().__init__()
@@ -122,7 +123,8 @@ class AnalyzeTrendTool(BaseTool):
       * predict: 话题预测
     - date_range: 日期范围（可选）
     """
-    args_schema = AnalyzeTrendInput
+    args_schema: Type[BaseModel] = AnalyzeTrendInput
+    analytics_tools: Any = None  # 声明字段
 
     def __init__(self, project_root: Optional[str] = None):
         super().__init__()
@@ -167,7 +169,8 @@ class SearchNewsTool(BaseTool):
     - platforms: 平台列表（可选）
     - limit: 返回数量，默认50
     """
-    args_schema = SearchNewsInput
+    args_schema: Type[BaseModel] = SearchNewsInput
+    search_tools: Any = None  # 声明字段
 
     def __init__(self, project_root: Optional[str] = None):
         super().__init__()
