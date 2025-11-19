@@ -31,6 +31,9 @@ env.bak/
 venv.bak/
 .python-version
 
+# Configuration (Schema-Driven)
+config/local.yaml
+
 # IDE
 .vscode/
 .idea/

@@ -2,15 +2,103 @@
 LangChain 配置管理
 
 支持多 LLM Provider、环境变量管理、成本控制等
+
+配置优先级（从高到低）：
+1. config/local.yaml（Schema-Driven Configuration）
+2. 环境变量（向后兼容）
+3. 默认值
 """
 
 import os
 import logging
-from typing import Literal, Optional
+from typing import Literal, Optional, Dict, Any
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 logger = logging.getLogger(__name__)
+
+
+# ==================== YAML 配置加载 ====================
+
+
+def _load_yaml_config() -> Optional[Dict[str, Any]]:
+    """
+    加载 config/local.yaml 配置文件
+
+    Returns:
+        配置字典，如果文件不存在或加载失败返回 None
+    """
+    try:
+        # 查找配置文件（项目根目录/config/local.yaml）
+        config_file = Path(__file__).parent.parent / "config" / "local.yaml"
+
+        if not config_file.exists():
+            return None
+
+        # 尝试导入 yaml
+        try:
+            import yaml
+        except ImportError:
+            logger.warning("PyYAML not installed, falling back to environment variables")
+            logger.warning("Install with: pip install pyyaml")
+            return None
+
+        # 读取配置
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+
+        logger.info(f"Loaded configuration from {config_file}")
+        return config
+
+    except Exception as e:
+        logger.warning(f"Failed to load config/local.yaml: {e}")
+        return None
+
+
+def _get_config_value(
+    yaml_config: Optional[Dict],
+    yaml_path: str,
+    env_var: str,
+    default: Any
+) -> Any:
+    """
+    获取配置值（优先级：yaml > env > default）
+
+    Args:
+        yaml_config: YAML 配置字典
+        yaml_path: YAML 路径（如 'llm.provider'）
+        env_var: 环境变量名
+        default: 默认值
+
+    Returns:
+        配置值
+    """
+    # 优先级 1: 从 YAML 读取
+    if yaml_config:
+        keys = yaml_path.split('.')
+        current = yaml_config
+
+        for key in keys:
+            if isinstance(current, dict) and key in current:
+                current = current[key]
+            else:
+                current = None
+                break
+
+        if current is not None:
+            return current
+
+    # 优先级 2: 从环境变量读取
+    env_value = os.getenv(env_var)
+    if env_value is not None:
+        return env_value
+
+    # 优先级 3: 使用默认值
+    return default
+
+
+# ==================== 辅助函数 ====================
 
 
 def _parse_float(
@@ -139,9 +227,16 @@ class LangChainConfig:
 
     @classmethod
     def from_env(cls) -> "LangChainConfig":
-        """从环境变量加载配置"""
+        """
+        从配置文件和环境变量加载配置
+
+        优先级：config/local.yaml > 环境变量 > 默认值
+        """
+        # 加载 YAML 配置（如果存在）
+        yaml_config = _load_yaml_config()
+
         # LLM Provider 配置
-        provider = os.getenv("LANGCHAIN_PROVIDER", "openai").lower()
+        provider = str(_get_config_value(yaml_config, "llm.provider", "LANGCHAIN_PROVIDER", "openai")).lower()
 
         # 验证 provider 值
         valid_providers = ["openai", "anthropic", "ollama"]
@@ -158,21 +253,36 @@ class LangChainConfig:
             "ollama": "qwen2.5:14b",  # 推荐中文模型
         }
 
+        # API Key 的特殊处理（从 api_keys.openai_api_key 或环境变量）
+        api_key = None
+        if provider == "openai":
+            api_key = _get_config_value(yaml_config, "api_keys.openai_api_key", "OPENAI_API_KEY", None)
+        elif provider == "anthropic":
+            api_key = _get_config_value(yaml_config, "api_keys.anthropic_api_key", "ANTHROPIC_API_KEY", None)
+
         llm_config = LLMProviderConfig(
             provider=provider,
-            model=os.getenv("LANGCHAIN_MODEL", default_models.get(provider, "gpt-4o-mini")),
-            api_key=os.getenv(
-                f"{provider.upper()}_API_KEY",
-                os.getenv("OPENAI_API_KEY") if provider == "openai" else None,
-            ),
-            base_url=os.getenv("LANGCHAIN_BASE_URL"),
-            temperature=_parse_float("LANGCHAIN_TEMPERATURE", 0.3, min_val=0.0, max_val=2.0),
-            max_tokens=_parse_int("LANGCHAIN_MAX_TOKENS", 1000, min_val=1, max_val=128000),
-            timeout=_parse_int("LANGCHAIN_TIMEOUT", 60, min_val=1, max_val=600),
+            model=str(_get_config_value(
+                yaml_config,
+                "llm.model",
+                "LANGCHAIN_MODEL",
+                default_models.get(provider, "gpt-4o-mini")
+            )),
+            api_key=api_key,
+            base_url=_get_config_value(yaml_config, "llm.base_url", "LANGCHAIN_BASE_URL", None) or None,
+            temperature=float(_get_config_value(yaml_config, "llm.temperature", "LANGCHAIN_TEMPERATURE", 0.3)),
+            max_tokens=int(_get_config_value(yaml_config, "llm.max_tokens", "LANGCHAIN_MAX_TOKENS", 1000)),
+            timeout=int(_get_config_value(yaml_config, "llm.timeout", "LANGCHAIN_TIMEOUT", 60)),
         )
 
         # Embeddings 配置
-        embeddings_provider = os.getenv("LANGCHAIN_EMBEDDINGS_PROVIDER", "openai").lower()
+        embeddings_provider = str(_get_config_value(
+            yaml_config,
+            "embeddings.provider",
+            "LANGCHAIN_EMBEDDINGS_PROVIDER",
+            "openai"
+        )).lower()
+
         if embeddings_provider not in ["openai", "ollama"]:
             logger.warning(
                 f"Invalid LANGCHAIN_EMBEDDINGS_PROVIDER={embeddings_provider}, using 'openai'"
@@ -187,15 +297,23 @@ class LangChainConfig:
 
         embeddings_config = EmbeddingsConfig(
             provider=embeddings_provider,
-            model=os.getenv(
+            model=str(_get_config_value(
+                yaml_config,
+                "embeddings.model",
                 "LANGCHAIN_EMBEDDINGS_MODEL",
-                default_embeddings_models.get(embeddings_provider, "text-embedding-3-small"),
-            ),
-            base_url=os.getenv("LANGCHAIN_EMBEDDINGS_BASE_URL"),
+                default_embeddings_models.get(embeddings_provider, "text-embedding-3-small")
+            )),
+            base_url=_get_config_value(yaml_config, "embeddings.base_url", "LANGCHAIN_EMBEDDINGS_BASE_URL", None) or None,
         )
 
         # 向量数据库配置
-        vector_store_provider = os.getenv("LANGCHAIN_VECTOR_STORE", "chroma").lower()
+        vector_store_provider = str(_get_config_value(
+            yaml_config,
+            "vector_store.provider",
+            "LANGCHAIN_VECTOR_STORE",
+            "chroma"
+        )).lower()
+
         if vector_store_provider not in ["chroma", "faiss"]:
             logger.warning(
                 f"Invalid LANGCHAIN_VECTOR_STORE={vector_store_provider}, using 'chroma'"
@@ -204,12 +322,18 @@ class LangChainConfig:
 
         vector_store_config = VectorStoreConfig(
             provider=vector_store_provider,
-            persist_directory=os.getenv(
-                "LANGCHAIN_VECTOR_PERSIST_DIR", "./data/vectors"
-            ),
-            collection_name=os.getenv(
-                "LANGCHAIN_VECTOR_COLLECTION", "trendradar_news"
-            ),
+            persist_directory=str(_get_config_value(
+                yaml_config,
+                "vector_store.persist_directory",
+                "LANGCHAIN_VECTOR_PERSIST_DIR",
+                "./data/vectors"
+            )),
+            collection_name=str(_get_config_value(
+                yaml_config,
+                "vector_store.collection_name",
+                "LANGCHAIN_VECTOR_COLLECTION",
+                "trendradar_news"
+            )),
         )
 
         return cls(
