@@ -224,6 +224,7 @@
     </div>
 
     <script>
+        const API_BASE = 'http://localhost:8007';
         let allPlatforms = [];
         let selectedPlatforms = new Set();
 
@@ -246,7 +247,7 @@
         });
 
         async function loadStats() {
-            const data = await fetch('/api/stats').then(r => r.json());
+            const data = await fetch(`${API_BASE}/api/stats`).then(r => r.json());
             const statsHtml = `
                 <div class="stat-card">
                     <h3>总新闻数</h3>
@@ -265,7 +266,7 @@
         }
 
         async function loadPlatforms() {
-            const data = await fetch('/api/platforms').then(r => r.json());
+            const data = await fetch(`${API_BASE}/api/platforms`).then(r => r.json());
             allPlatforms = data.platforms || [];
             const filtersHtml = allPlatforms.map(p =>
                 `<div class="filter-chip" onclick="togglePlatform('${p.id}')">${p.name}</div>`
@@ -292,7 +293,7 @@
             list.innerHTML = '<div class="loading">加载中...</div>';
 
             const platforms = selectedPlatforms.size > 0 ? Array.from(selectedPlatforms).join(',') : null;
-            const url = platforms ? `/api/news/latest?platforms=${platforms}&limit=50` : '/api/news/latest?limit=50';
+            const url = platforms ? `${API_BASE}/api/news/latest?platforms=${platforms}&limit=50` : `${API_BASE}/api/news/latest?limit=50`;
             const data = await fetch(url).then(r => r.json());
 
             if (!data.news || data.news.length === 0) {
@@ -317,7 +318,7 @@
             const list = document.getElementById('topic-list');
             list.innerHTML = '<div class="loading">加载中...</div>';
 
-            const data = await fetch('/api/topics/trending?top_n=20').then(r => r.json());
+            const data = await fetch(`${API_BASE}/api/topics/trending?top_n=20`).then(r => r.json());
 
             if (!data.topics || data.topics.length === 0) {
                 list.innerHTML = '<div class="empty">暂无数据</div>';
@@ -341,7 +342,7 @@
             const results = document.getElementById('search-results');
             results.innerHTML = '<div class="loading">搜索中...</div>';
 
-            const data = await fetch(`/api/search?keyword=${encodeURIComponent(keyword)}&limit=100`).then(r => r.json());
+            const data = await fetch(`${API_BASE}/api/search?keyword=${encodeURIComponent(keyword)}&limit=100`).then(r => r.json());
 
             if (!data.results || data.results.length === 0) {
                 results.innerHTML = '<div class="empty">未找到相关新闻</div>';

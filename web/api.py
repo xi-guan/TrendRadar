@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Query
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List
 import sys
 from pathlib import Path
@@ -12,7 +11,15 @@ from mcp_server.tools.data_query import DataQueryTools
 from mcp_server.tools.analytics import AnalyticsTools
 from mcp_server.tools.search_tools import SearchTools
 
-app = FastAPI(title="TrendRadar Web Interface")
+app = FastAPI(title="TrendRadar API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3006", "http://127.0.0.1:3006"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 project_root = str(Path(__file__).parent.parent)
 data_tools = DataQueryTools(project_root)
@@ -68,5 +75,3 @@ async def get_platforms():
     config = load_config()
     platforms = config.get('platforms', [])
     return {"platforms": platforms}
-
-app.mount("/", StaticFiles(directory=str(Path(__file__).parent / "static"), html=True), name="static")
