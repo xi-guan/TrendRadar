@@ -43,32 +43,65 @@ ollama pull nomic-embed-text
 
 ## 3. 配置 TrendRadar
 
-### 方法 1：环境变量（推荐）
+### 方法 1：Schema-Driven Configuration（推荐）⭐
 
-创建 `.env` 文件：
+**一键初始化配置**：
 ```bash
-# LLM 配置
-LANGCHAIN_PROVIDER=ollama
-LANGCHAIN_MODEL=qwen2.5:14b
-LANGCHAIN_BASE_URL=http://localhost:11434  # Ollama 默认地址
-
-# Embeddings 配置（用于向量检索）
-LANGCHAIN_EMBEDDINGS_PROVIDER=ollama
-LANGCHAIN_EMBEDDINGS_MODEL=nomic-embed-text
-LANGCHAIN_EMBEDDINGS_BASE_URL=http://localhost:11434
-
-# 其他配置（可选）
-LANGCHAIN_TEMPERATURE=0.3
-LANGCHAIN_MAX_TOKENS=2000
-LANGCHAIN_TIMEOUT=120
+# 1. 初始化配置系统
+./scripts/setup.sh
 ```
 
-### 方法 2：命令行导出
+这会自动生成 `config/local.yaml` 和 `.env` 文件。
+
+**2. 编辑配置文件**：
+```bash
+vim config/local.yaml
+```
+
+修改以下内容：
+```yaml
+llm:
+  provider: ollama         # 改为 ollama
+  model: qwen2.5:14b       # 改为本地模型
+  temperature: 0.3
+  max_tokens: 2000         # 可选：增加 token 数
+  timeout: 120             # 可选：增加超时时间
+  base_url: ''             # 留空，自动使用 http://localhost:11434
+
+embeddings:
+  provider: ollama         # 改为 ollama
+  model: nomic-embed-text  # 本地 embeddings 模型
+  base_url: ''             # 留空，自动使用 http://localhost:11434
+```
+
+**3. 重新生成环境变量**：
+```bash
+./scripts/setup.sh
+```
+
+**优势**：
+- ✅ 配置集中管理，一目了然
+- ✅ 密钥自动生成（JWT、Session Secret）
+- ✅ 支持深度合并，保留现有配置
+- ✅ 配置即文档，字段都有说明
+
+### 方法 2：环境变量（向后兼容）
+
+如果你不想使用配置文件，仍然可以使用环境变量：
+
 ```bash
 export LANGCHAIN_PROVIDER=ollama
 export LANGCHAIN_MODEL=qwen2.5:14b
 export LANGCHAIN_EMBEDDINGS_PROVIDER=ollama
 export LANGCHAIN_EMBEDDINGS_MODEL=nomic-embed-text
+```
+
+或创建 `.env` 文件：
+```bash
+LANGCHAIN_PROVIDER=ollama
+LANGCHAIN_MODEL=qwen2.5:14b
+LANGCHAIN_EMBEDDINGS_PROVIDER=ollama
+LANGCHAIN_EMBEDDINGS_MODEL=nomic-embed-text
 ```
 
 ## 4. 运行测试
