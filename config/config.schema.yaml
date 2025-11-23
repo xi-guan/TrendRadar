@@ -1,0 +1,109 @@
+# TrendRadar Configuration Schema
+#
+# 这是配置元数据定义文件（提交到 git）
+# 运行 ./scripts/setup.sh 会自动生成 config/local.yaml
+#
+# 字段类型：
+# - 普通字段：YAML 自动识别类型（string, int, float, bool）
+# - 密钥字段：type: secret, auto_generate: true
+
+# ==================== LLM 配置 ====================
+llm:
+  - section: llm.provider
+    default: "openai"
+    description: "LLM provider (openai/ollama/anthropic)"
+    options: ["openai", "ollama", "anthropic"]
+
+  - section: llm.model
+    default: "gpt-4o-mini"
+    description: "LLM model name (e.g., gpt-4o-mini, qwen2.5:14b)"
+
+  - section: llm.temperature
+    default: 0.3
+    description: "LLM temperature (0.0-2.0, higher = more creative)"
+
+  - section: llm.max_tokens
+    default: 1000
+    description: "Maximum tokens per response"
+
+  - section: llm.timeout
+    default: 60
+    description: "Request timeout in seconds"
+
+  - section: llm.base_url
+    default: ""
+    description: "Custom API base URL (optional, e.g., http://localhost:11434 for Ollama)"
+
+# ==================== Embeddings 配置 ====================
+embeddings:
+  - section: embeddings.provider
+    default: "openai"
+    description: "Embeddings provider (openai/ollama)"
+    options: ["openai", "ollama"]
+
+  - section: embeddings.model
+    default: "text-embedding-3-small"
+    description: "Embeddings model name (e.g., text-embedding-3-small, nomic-embed-text)"
+
+  - section: embeddings.base_url
+    default: ""
+    description: "Custom embeddings API base URL (optional)"
+
+# ==================== Vector Store 配置 ====================
+vector_store:
+  - section: vector_store.provider
+    default: "chroma"
+    description: "Vector store provider (chroma/faiss)"
+    options: ["chroma", "faiss"]
+
+  - section: vector_store.persist_directory
+    default: "./data/vectors"
+    description: "Vector store persistence directory"
+
+  - section: vector_store.collection_name
+    default: "trendradar_news"
+    description: "Vector store collection name"
+
+# ==================== API Keys 配置 ====================
+# 注意：API Keys 需要用户手动配置，不会自动生成
+api_keys:
+  - section: api_keys.openai_api_key
+    default: ""
+    description: "OpenAI API Key (required for provider=openai)"
+    env_var: "OPENAI_API_KEY"
+
+  - section: api_keys.anthropic_api_key
+    default: ""
+    description: "Anthropic API Key (required for provider=anthropic)"
+    env_var: "ANTHROPIC_API_KEY"
+
+# ==================== MCP Server 配置 ====================
+mcp:
+  - section: mcp.port
+    default: 3000
+    description: "MCP server port"
+
+  - section: mcp.host
+    default: "0.0.0.0"
+    description: "MCP server host"
+
+  - section: mcp.jwt_secret
+    type: secret
+    auto_generate: true
+    description: "JWT signing secret (auto-generated)"
+
+  - section: mcp.session_secret
+    type: secret
+    auto_generate: true
+    description: "Session secret (auto-generated)"
+
+# ==================== 开发配置 ====================
+dev:
+  - section: dev.debug
+    default: false
+    description: "Enable debug mode"
+
+  - section: dev.log_level
+    default: "INFO"
+    description: "Logging level (DEBUG/INFO/WARNING/ERROR)"
+    options: ["DEBUG", "INFO", "WARNING", "ERROR"]

@@ -51,11 +51,23 @@ RUN set -ex && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# ==================== UV 安装（10-100倍速度提升）====================
+# 从官方镜像复制 uv 二进制文件（比 pip 快 10-100 倍）
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
+# 复制依赖定义文件
+COPY pyproject.toml uv.lock ./
+
+# 使用 uv 安装生产依赖（不安装开发工具，无需虚拟环境）
+# --frozen: 使用 uv.lock 精确版本，不重新解析依赖
+# --no-dev: 仅安装生产依赖，跳过 pytest/black/ruff 等开发工具
+# --no-cache: 不使用缓存，减小镜像体积
+RUN uv sync --frozen --no-dev --no-cache
+
+# 复制应用代码
 COPY main.py .
 COPY docker/manage.py .
+COPY mcp_server/ mcp_server/
 
 # 复制 entrypoint.sh 并强制转换为 LF 格式
 COPY docker/entrypoint.sh /entrypoint.sh.tmp
